@@ -1,0 +1,238 @@
+# Exemple de docker-compose.yml avec restart policies et health checks
+# Copier ce fichier et l'adapter à votre application
+
+version: '3.8'
+
+services:
+  # Base de données PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: app-postgres
+    restart: always  # Redémarrage automatique
+    environment:
+      POSTGRES_DB: ${DB_NAME:-myapp}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - app-network
+
+  # Redis pour le cache
+  redis:
+    image: redis:7-alpine
+    container_name: app-redis
+    restart: always
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - app-network
+
+  # Application backend (Node.js, Python, Go, etc.)
+  backend:
+    image: mon-backend:latest
+    container_name: app-backend
+    restart: unless-stopped  # Redémarre sauf si arrêté manuellement
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-changeme}@postgres:5432/${DB_NAME:-myapp}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
+      PORT: 8080
+    volumes:
+      - ./backend:/app
+      - backend-logs:/var/log/app
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+
+  # Worker pour les tâches asynchrones
+  worker:
+    image: mon-backend:latest
+    container_name: app-worker
+    restart: unless-stopped
+    command: npm run worker  # Ou python worker.py, etc.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-changeme}@postgres:5432/${DB_NAME:-myapp}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
+    volumes:
+      - ./backend:/app
+      - worker-logs:/var/log/worker
+    networks:
+      - app-network
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: app-nginx
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-logs:/var/log/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - app-network
+
+  # Monitoring - Prometheus (optionnel)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: app-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - app-network
+
+  # Monitoring - Grafana (optionnel)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: app-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-changeme}
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+
+# Volumes persistants
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  backend-logs:
+    driver: local
+  worker-logs:
+    driver: local
+  nginx-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# Réseau isolé
+networks:
+  app-network:
+    driver: bridge
+
+# ==============================================================================
+# NOTES D'UTILISATION
+# ==============================================================================
+#
+# 1. Copier ce fichier:
+#    cp docker-compose.example.yml docker-compose.yml
+#
+# 2. Créer un fichier .env:
+#    DB_NAME=myapp
+#    DB_USER=postgres
+#    DB_PASSWORD=votre-password-securise
+#    REDIS_PASSWORD=votre-redis-password
+#    GRAFANA_PASSWORD=votre-grafana-password
+#
+# 3. Démarrer:
+#    docker-compose up -d
+#
+# 4. Vérifier:
+#    docker-compose ps
+#    docker-compose logs -f
+#
+# 5. Arrêter:
+#    docker-compose down
+#
+# 6. Arrêter et supprimer les volumes:
+#    docker-compose down -v
+#
+# ==============================================================================
+# RESTART POLICIES
+# ==============================================================================
+#
+# - restart: "no"            → Jamais redémarrer (défaut)
+# - restart: always          → Toujours redémarrer
+# - restart: unless-stopped  → Redémarrer sauf si arrêté manuellement
+# - restart: on-failure      → Redémarrer seulement en cas d'erreur
+#
+# ==============================================================================
+# HEALTH CHECKS
+# ==============================================================================
+#
+# Les health checks permettent à depends_on de vérifier que les services
+# sont vraiment prêts avant de démarrer les services dépendants.
+#
+# States possibles:
+# - starting   → Le conteneur vient de démarrer
+# - healthy    → Le health check réussit
+# - unhealthy  → Le health check échoue
+#
+# ==============================================================================
+# DEPENDS_ON
+# ==============================================================================
+#
+# Sans condition (attend juste que le conteneur démarre):
+# depends_on:
+#   - postgres
+#
+# Avec condition (attend que le service soit healthy):
+# depends_on:
+#   postgres:
+#     condition: service_healthy
+#
+# ==============================================================================

@@ -1,0 +1,188 @@
+# Exemple de service systemd pour gérer un projet Docker Compose
+# Copier ce fichier dans /etc/systemd/system/ et l'adapter
+
+# ==============================================================================
+# INSTALLATION
+# ==============================================================================
+# 1. Copier ce fichier:
+#    sudo cp app-compose.service.example /etc/systemd/system/mon-app.service
+#
+# 2. Modifier le fichier:
+#    sudo nano /etc/systemd/system/mon-app.service
+#    → Changer WorkingDirectory vers votre projet
+#    → Changer Description
+#
+# 3. Recharger systemd:
+#    sudo systemctl daemon-reload
+#
+# 4. Activer le service (démarrage automatique):
+#    sudo systemctl enable mon-app.service
+#
+# 5. Démarrer le service:
+#    sudo systemctl start mon-app.service
+#
+# 6. Vérifier:
+#    sudo systemctl status mon-app.service
+#
+# ==============================================================================
+
+[Unit]
+Description=Mon Application Docker Compose
+Documentation=https://mon-app.example.com/docs
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+# Si vous avez d'autres dépendances (ex: un service NFS)
+# After=docker.service network-online.target nfs-mount.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Répertoire du projet (MODIFIER CETTE LIGNE)
+WorkingDirectory=/opt/mon-app
+
+# Variables d'environnement (optionnel)
+Environment="COMPOSE_PROJECT_NAME=monapp"
+Environment="COMPOSE_FILE=docker-compose.yml"
+
+# Charger les variables depuis un fichier .env (recommandé)
+EnvironmentFile=-/opt/mon-app/.env
+
+# Pull des images avant de démarrer (optionnel, recommandé)
+ExecStartPre=/usr/bin/docker-compose pull --quiet --ignore-pull-failures
+
+# Démarrer les conteneurs
+ExecStart=/usr/bin/docker-compose up -d --remove-orphans
+
+# Arrêter les conteneurs
+ExecStop=/usr/bin/docker-compose down
+
+# Recharger la configuration (pull + restart)
+ExecReload=/usr/bin/docker-compose pull --quiet --ignore-pull-failures
+ExecReload=/usr/bin/docker-compose up -d --remove-orphans
+
+# Timeout pour le démarrage (augmenter si nécessaire)
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+# Redémarrage automatique en cas d'échec
+Restart=on-failure
+RestartSec=10s
+
+# Sécurité (optionnel mais recommandé)
+# PrivateTmp=yes
+# NoNewPrivileges=yes
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mon-app
+
+[Install]
+WantedBy=multi-user.target
+
+# ==============================================================================
+# COMMANDES UTILES
+# ==============================================================================
+#
+# Démarrer:
+#   sudo systemctl start mon-app
+#
+# Arrêter:
+#   sudo systemctl stop mon-app
+#
+# Redémarrer:
+#   sudo systemctl restart mon-app
+#
+# Recharger (pull + redémarrage):
+#   sudo systemctl reload mon-app
+#
+# Voir le statut:
+#   sudo systemctl status mon-app
+#
+# Voir les logs:
+#   sudo journalctl -u mon-app -f
+#   sudo journalctl -u mon-app --since today
+#   sudo journalctl -u mon-app -n 100
+#
+# Activer au démarrage:
+#   sudo systemctl enable mon-app
+#
+# Désactiver au démarrage:
+#   sudo systemctl disable mon-app
+#
+# Vérifier si activé:
+#   sudo systemctl is-enabled mon-app
+#
+# ==============================================================================
+# VARIANTES
+# ==============================================================================
+
+# --- VARIANTE 1: Service avec démarrage différé ---
+# Utile si vous voulez attendre que tout le système soit prêt
+#
+# [Service]
+# ExecStartPre=/bin/sleep 30
+# ExecStartPre=/usr/bin/docker-compose pull --quiet
+# ExecStart=/usr/bin/docker-compose up -d
+
+# --- VARIANTE 2: Service avec vérification Docker ready ---
+# Attend que Docker soit complètement prêt
+#
+# [Service]
+# ExecStartPre=/bin/bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
+# ExecStart=/usr/bin/docker-compose up -d
+
+# --- VARIANTE 3: Service avec plusieurs fichiers compose ---
+# Combine plusieurs fichiers docker-compose
+#
+# [Service]
+# ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# --- VARIANTE 4: Service avec profil ---
+# Utilise les profils docker-compose
+#
+# [Service]
+# ExecStart=/usr/bin/docker-compose --profile production up -d
+
+# --- VARIANTE 5: Multiple projets avec dépendances ---
+# Si mon-app dépend d'un autre projet
+#
+# [Unit]
+# Description=Mon Application (dépend de la base)
+# After=docker.service app-database.service
+# Requires=app-database.service
+#
+# [Service]
+# WorkingDirectory=/opt/mon-app
+# ExecStart=/usr/bin/docker-compose up -d
+
+# ==============================================================================
+# DEBUGGING
+# ==============================================================================
+#
+# Si le service ne démarre pas:
+#
+# 1. Vérifier le statut:
+#    sudo systemctl status mon-app -l
+#
+# 2. Voir les logs détaillés:
+#    sudo journalctl -u mon-app -xe
+#
+# 3. Tester manuellement:
+#    cd /opt/mon-app
+#    sudo docker-compose up -d
+#
+# 4. Vérifier la syntaxe systemd:
+#    sudo systemd-analyze verify /etc/systemd/system/mon-app.service
+#
+# 5. Vérifier que Docker fonctionne:
+#    sudo systemctl status docker
+#    sudo docker ps
+#
+# 6. Vérifier les permissions:
+#    ls -la /opt/mon-app/docker-compose.yml
+#
+# ==============================================================================
