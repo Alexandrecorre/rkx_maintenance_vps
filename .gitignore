@@ -1,0 +1,29 @@
+# Logs et fichiers de rapport
+*.log
+*.txt
+!spec.txt
+
+# Fichiers de configuration avec secrets
+config.conf.production
+config.conf.local
+*.env
+*.secret
+
+# Fichiers de sauvegarde
+*.backup
+*.bak
+*~
+
+# Répertoires de test
+test-logs/
+temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

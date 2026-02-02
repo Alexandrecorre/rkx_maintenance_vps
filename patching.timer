@@ -1,0 +1,19 @@
+[Unit]
+Description=Timer pour le patching automatique (tous les mercredis à 02h00)
+Documentation=file:///opt/patching/README.md
+
+[Timer]
+# Exécution tous les mercredis à 02:00
+OnCalendar=Wed *-*-* 02:00:00
+
+# Exécuter au prochain démarrage si le timer a été manqué
+Persistent=true
+
+# Randomize le délai de 0 à 5 minutes pour éviter la surcharge
+RandomizedDelaySec=300
+
+# Exécuter le service associé
+Unit=patching.service
+
+[Install]
+WantedBy=timers.target

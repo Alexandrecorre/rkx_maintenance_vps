@@ -1,0 +1,16 @@
+[Unit]
+Description=Script de patching automatique VPS Ubuntu
+Documentation=file:///opt/patching/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/patching/patch-vps.sh
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patching
+
+[Install]
+WantedBy=multi-user.target

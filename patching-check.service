@@ -1,0 +1,14 @@
+[Unit]
+Description=Vérification des services critiques après redémarrage (Patching)
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/patching/check-services.sh
+RemainAfterExit=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

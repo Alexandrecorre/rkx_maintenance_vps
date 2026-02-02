@@ -1,0 +1,70 @@
+# Dockerfile pour tester le script de patching localement
+# Usage: docker build -f Dockerfile.test -t patching-test .
+#        docker run -it patching-test
+
+FROM ubuntu:22.04
+
+# Éviter les prompts interactifs
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Installation des dépendances de base
+RUN apt-get update && apt-get install -y \
+    curl \
+    cron \
+    systemd \
+    nano \
+    vim \
+    sudo \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Création des répertoires
+RUN mkdir -p /opt/patching /var/log/patching
+
+# Copie des fichiers du projet
+COPY patch-vps.sh /opt/patching/
+COPY check-services.sh /opt/patching/
+COPY config.conf /opt/patching/
+COPY test-notification.sh /opt/patching/
+COPY README.md /opt/patching/
+COPY CHEATSHEET.md /opt/patching/
+
+# Permissions
+RUN chmod 700 /opt/patching/patch-vps.sh && \
+    chmod 700 /opt/patching/check-services.sh && \
+    chmod 600 /opt/patching/config.conf && \
+    chmod 755 /opt/patching && \
+    chmod 755 /var/log/patching && \
+    chown -R root:root /opt/patching
+
+# Configuration par défaut (désactiver redémarrage dans le conteneur)
+RUN sed -i 's/ENABLE_REBOOT=true/ENABLE_REBOOT=false/' /opt/patching/config.conf
+
+# Script d'entrée
+RUN echo '#!/bin/bash\n\
+echo "==========================================="\n\
+echo "Environnement de test du script de patching"\n\
+echo "==========================================="\n\
+echo ""\n\
+echo "Commandes disponibles:"\n\
+echo "  test-dry     : Test en mode dry-run"\n\
+echo "  test-run     : Exécution réelle du patching"\n\
+echo "  logs         : Voir les logs"\n\
+echo "  config       : Éditer la configuration"\n\
+echo "  help         : Afficher l'\''aide"\n\
+echo ""\n\
+exec /bin/bash\n\
+' > /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Aliases pratiques
+RUN echo 'alias test-dry="/opt/patching/patch-vps.sh --dry-run"' >> /root/.bashrc && \
+    echo 'alias test-run="/opt/patching/patch-vps.sh"' >> /root/.bashrc && \
+    echo 'alias logs="tail -f /var/log/patching/*.log"' >> /root/.bashrc && \
+    echo 'alias config="nano /opt/patching/config.conf"' >> /root/.bashrc && \
+    echo 'alias help="cat /opt/patching/CHEATSHEET.md | head -50"' >> /root/.bashrc
+
+WORKDIR /opt/patching
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
